@@ -27,103 +27,163 @@ use crate::{
 
 fn main() -> Result<()> {
     let opt = Cli::parse();
-    let app = Core::new();
-    let mut user_data = UserData::new()?;
-    let ignore_data = IgnoreData::new(&user_data)?;
 
-    match opt.cmd {
-        Some(Cmds::Init { force }) => return UserData::create(force),
-        Some(Cmds::Alias(cmd)) => {
-            return match cmd {
-                AliasCmd::List => {
-                    ignore_data.list_aliases();
-                    return Ok(());
-                }
-                AliasCmd::Add { name, aliases } => user_data.add_alias(name, aliases),
-                AliasCmd::Remove { name } => user_data.remove_alias(&name),
-            };
-        }
-        Some(Cmds::Template(cmd)) => {
-            return match cmd {
-                TemplateCmd::List => {
-                    ignore_data.list_templates();
-                    return Ok(());
-                }
-                TemplateCmd::Add { name } => user_data.add_template(name),
-                TemplateCmd::Remove { name } => user_data.remove_template(&name),
-            };
-        }
-        Some(Cmds::Completion { shell }) => {
-            let mut app = Cli::command();
-            print_completion(shell, &mut app);
-            return Ok(());
-        }
-        _ => {}
+    if opt.debug {
+        eprintln!("DEBUG: Parsed CLI options: {:?}", opt);
     }
 
-    if opt.update {
-        app.update()?;
-    } else if cache_exists() {
-        eprintln!(
-            "{}: You are using cached results, pass '-u' to update the cache\n",
-            "Info".bold().green(),
+    // Handle subcommands first
+    if let Some(cmd) = opt.cmd {
+        if opt.debug { eprintln!("DEBUG: Handling subcommand: {:?}", cmd); }
+        // Initialize UserData and IgnoreData only if needed by a subcommand
+        match cmd {
+            Cmds::Init { force } => return UserData::create(force),
+            Cmds::Alias(alias_cmd) => {
+                let mut user_data = UserData::new()?;
+                let ignore_data = IgnoreData::new(&user_data)?;
+                return match alias_cmd {
+                    AliasCmd::List => {
+                        ignore_data.list_aliases();
+                        Ok(())
+                    }
+                    AliasCmd::Add { name, aliases } => user_data.add_alias(name, aliases),
+                    AliasCmd::Remove { name } => user_data.remove_alias(&name),
+                };
+            }
+            Cmds::Template(template_cmd) => {
+                let mut user_data = UserData::new()?;
+                let ignore_data = IgnoreData::new(&user_data)?;
+                return match template_cmd {
+                    TemplateCmd::List => {
+                        ignore_data.list_templates();
+                        Ok(())
+                    }
+                    TemplateCmd::Add { name } => user_data.add_template(name),
+                    TemplateCmd::Remove { name } => user_data.remove_template(&name),
+                };
+            }
+            Cmds::Completion { shell } => {
+                let mut app_cmd = Cli::command();
+                print_completion(shell, &mut app_cmd);
+                return Ok(());
+            }
+        }
+    }
+
+    // If no subcommand, and templates are provided directly, and it's not a list/update/auto for gitignore.io
+    if !opt.templates.is_empty() && !opt.list && !opt.update && !opt.auto {
+        if opt.debug { eprintln!("DEBUG: Entering direct GitHub template fetch mode."); }
+        return ignore::fetch_and_append_github_templates(
+            &opt.templates,
+            opt.verbose,
+            opt.debug,
+            opt.write,
         );
-    } else {
+    }
+
+    // --- Existing logic for gitignore.io cache, list, auto, etc. ---
+    if opt.debug { eprintln!("DEBUG: Entering gitignore.io cache logic mode."); }
+
+    let app = Core::new(); 
+    let mut user_data = UserData::new()?; 
+    let ignore_data = IgnoreData::new(&user_data)?;
+
+
+    if opt.update {
+        if opt.verbose { eprintln!("VERBOSE: Updating gitignore.io cache...");}
+        app.update()?; // This prints "Info: Update successful"
+        if opt.templates.is_empty() && !opt.auto && !opt.list {
+             if opt.debug { eprintln!("DEBUG: Update complete, no further templates to process. Exiting.");}
+             return Ok(());
+        }
+    } else if cache_exists() {
+        if opt.verbose || (!opt.list && !opt.templates.is_empty()) { 
+             eprintln!(
+                "{}: You are using cached results from gitignore.io, pass '-u' to update the cache\n",
+                "Info".bold().green(),
+            );
+        }
+    } else if !opt.list { 
         eprintln!(
-            "{}: Cache directory or ignore file not found, attempting update.",
+            "{}: Cache directory or gitignore.io ignore file not found, attempting update.",
             "Warning".bold().red(),
         );
         app.update()?;
     }
 
-    let mut all_templates: HashSet<String> = opt.templates.into_iter().collect();
+    let mut all_templates_for_cache: HashSet<String> = opt.templates.into_iter().collect();
     if opt.auto {
+        if opt.verbose { eprintln!("VERBOSE: Autodetecting templates for gitignore.io cache...");}
         for template in app.autodetect_templates()? {
-            all_templates.insert(template);
+            if opt.verbose { eprintln!("VERBOSE: Autodetected (for cache): {}", template.cyan());}
+            all_templates_for_cache.insert(template);
         }
     }
 
-    let templates: Vec<String> = all_templates.iter().cloned().collect();
+    let templates_for_cache: Vec<String> = all_templates_for_cache.iter().cloned().collect();
 
-    if opt.update && templates.is_empty() {
+    if opt.update && templates_for_cache.is_empty() && !opt.list {
+        if opt.debug { eprintln!("DEBUG: Update was run, but no templates specified for further processing via cache. Exiting.");}
         return Ok(());
     }
-
-    let str = if opt.list {
-        list(&ignore_data, templates.as_slice())
-    } else if templates.is_empty() {
-        let mut app = Cli::command();
-        app.render_help().to_string()
+    
+    let output_str = if opt.list {
+        if opt.verbose { eprintln!("VERBOSE: Listing templates from gitignore.io cache for: {:?}", templates_for_cache); }
+        list(&ignore_data, templates_for_cache.as_slice())
+    } else if templates_for_cache.is_empty() {
+        if opt.debug { eprintln!("DEBUG: No templates specified for gitignore.io cache processing, rendering help.");}
+        let mut app_cmd = Cli::command();
+        app_cmd.render_help().to_string()
     } else {
-        get_templates(&ignore_data, templates.as_slice())
+        if opt.verbose { eprintln!("VERBOSE: Getting templates from gitignore.io cache for: {:?}", templates_for_cache); }
+        get_templates(&ignore_data, templates_for_cache.as_slice())
     };
 
+    if output_str.is_empty() && templates_for_cache.is_empty() && !opt.list {
+        // Help was rendered into output_str.
+        if opt.debug { eprintln!("DEBUG: Output string is empty (help was rendered).");}
+    } else if output_str.is_empty() && !templates_for_cache.is_empty() {
+         eprintln!("{}: No templates found in gitignore.io cache for: {}", "Warning".yellow(), templates_for_cache.join(", "));
+         return Ok(());
+    }
+
+
     if opt.write {
-        let file = std::env::current_dir()?.join(".gitignore");
-        if !file.exists() {
+        if opt.debug { eprintln!("DEBUG: Write flag is set for gitignore.io cache output.");}
+        let file_path = std::env::current_dir()?.join(".gitignore");
+        if !file_path.exists() {
+            if opt.verbose {
+                eprintln!(
+                    "VERBOSE: no '.gitignore' file found, creating with content from gitignore.io...",
+                );
+            }
+            let mut file = File::create(&file_path)?;
+            file.write_all(output_str.as_bytes())?;
+            println!("Created {} with content from gitignore.io for: {}", ".gitignore".cyan(), templates_for_cache.join(", ").green());
+        } else if opt.force {
+            if opt.verbose {
+                eprintln!(
+                    "VERBOSE: appending results from gitignore.io to '.gitignore' (force active)...",
+                );
+            }
+            let mut file = OpenOptions::new().append(true).open(&file_path)?;
+            let current_content = std::fs::read_to_string(&file_path)?; // Use std::fs for simplicity here
+            if !current_content.is_empty() && !current_content.ends_with('\n') {
+                 writeln!(file)?;
+            }
+            file.write_all(output_str.as_bytes())?;
+            println!("Appended content from gitignore.io to {} for: {}", ".gitignore".cyan(), templates_for_cache.join(", ").green());
+        } else {
             eprintln!(
-                "{}: no '.gitignore' file found, creating...",
-                "Info".bold().green()
-            );
-            let mut file = File::create(&file)?;
-            file.write_all(str.as_bytes())?;
-        } else if file.exists() && !opt.force {
-            eprintln!(
-                "{}: '.gitignore' already exists, use '-f' to force write",
+                "{}: '.gitignore' already exists. Use '-f' to append results from gitignore.io, or handle manually.",
                 "Warning".bold().red()
             );
-        } else if file.exists() && opt.force {
-            eprintln!(
-                "{}: appending results to '.gitignore'",
-                "Info".bold().green()
-            );
-            let mut file = OpenOptions::new().append(true).open(&file)?;
-            file.write_all(str.as_bytes())?;
         }
-    } else {
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-        handle.write_all(str.as_bytes())?;
+    } else { 
+        if opt.debug { eprintln!("DEBUG: Writing gitignore.io cache output to stdout.");}
+        let stdout_handle = io::stdout();
+        let mut locked_stdout = stdout_handle.lock();
+        locked_stdout.write_all(output_str.as_bytes())?;
     }
 
     Ok(())

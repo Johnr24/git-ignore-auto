@@ -8,21 +8,30 @@ use clap_complete::{Generator, Shell, generate};
 #[clap(args_conflicts_with_subcommands = true)]
 /// Quickly and easily add templates to .gitignore
 pub struct Cli {
-    /// List <templates> or all available templates.
+    /// List <templates> or all available templates (uses gitignore.io cache).
     #[arg(short, long)]
     pub list: bool,
     /// Update templates by fetching them from gitignore.io
-    #[arg(short, long)]
+    #[arg(short = 'u', long)]
     pub update: bool,
-    /// Autodetect templates based on the existing files
+    /// Autodetect templates based on the existing files (uses gitignore.io cache).
     #[arg(short, long)]
     pub auto: bool,
-    /// Write to `.gitignore` file instead of stdout
+    /// Write to `.gitignore` file instead of stdout.
+    /// For direct template fetching (e.g., `gi rust`), this appends to .gitignore.
+    /// For gitignore.io cache operations, behavior depends on other flags.
     #[arg(short, long)]
     pub write: bool,
-    /// Forcefully overwrite existing `.gitignore` file
+    /// Forcefully overwrite existing `.gitignore` file when used with gitignore.io cache operations.
+    /// Not used by direct GitHub template fetching mode (which always appends if -w is active).
     #[arg(short, long, requires = "write")]
     pub force: bool,
+    /// Verbose output.
+    #[arg(short = 'V', long)]
+    pub verbose: bool,
+    /// Debug output.
+    #[arg(long)]
+    pub debug: bool,
     /// Configuration management
     #[command(subcommand)]
     pub cmd: Option<Cmds>,
