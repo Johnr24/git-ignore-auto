@@ -1,10 +1,10 @@
 use std::{
-    env::current_dir,
-    fs::{DirEntry, File, read_dir, OpenOptions, read_to_string},
-    io::{self, Write as IoWrite}, // Renamed to avoid conflict
-    sync::LazyLock,
     collections::HashSet,
+    env::current_dir,
+    fs::{DirEntry, File, OpenOptions, read_dir, read_to_string},
+    io::{self, Write as IoWrite}, // Renamed to avoid conflict
     path::Path,
+    sync::LazyLock,
 };
 
 use anyhow::Result;
@@ -101,7 +101,8 @@ fn create_cache() -> std::io::Result<()> {
 
 // Helper function to apply capitalization similar to the Zsh script's logic.
 fn capitalize_template_spec(spec: &str, debug: bool) -> String {
-    let parts: Vec<String> = spec.split('/')
+    let parts: Vec<String> = spec
+        .split('/')
         .map(|part| {
             if part.chars().any(|c| c.is_ascii_uppercase()) {
                 part.to_string()
@@ -118,7 +119,7 @@ fn capitalize_template_spec(spec: &str, debug: bool) -> String {
                     // A non-alphanumeric char sets up the next char for capitalization
                     if !c.is_alphanumeric() {
                         capitalize_next = true;
-                    } else if capitalize_next { 
+                    } else if capitalize_next {
                         // if it was an alphanumeric char that got capitalized, or was already uppercase
                         capitalize_next = false;
                     }
@@ -129,7 +130,10 @@ fn capitalize_template_spec(spec: &str, debug: bool) -> String {
         .collect();
     let result = parts.join("/");
     if debug {
-        eprintln!("DEBUG: Capitalization: original='{}', corrected='{}'", spec, result);
+        eprintln!(
+            "DEBUG: Capitalization: original='{}', corrected='{}'",
+            spec, result
+        );
     }
     result
 }
@@ -156,7 +160,7 @@ pub fn fetch_and_append_github_templates(
     let gitignore_path = Path::new(GITIGNORE_FILE_NAME);
     let mut existing_lines = HashSet::new();
     // Collects all unique new lines from all templates for this session, to be written/printed once.
-    let mut session_lines_to_add = Vec::new(); 
+    let mut session_lines_to_add = Vec::new();
 
     if write_to_file_flag {
         if !gitignore_path.exists() {
@@ -172,18 +176,23 @@ pub fn fetch_and_append_github_templates(
                     existing_lines.insert(line.trim_end().to_string());
                 }
                 if debug {
-                    eprintln!("DEBUG: Loaded {} lines from existing .gitignore.", existing_lines.len());
+                    eprintln!(
+                        "DEBUG: Loaded {} lines from existing .gitignore.",
+                        existing_lines.len()
+                    );
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                 if debug { eprintln!("DEBUG: .gitignore not found, will be created if lines are added.");}
+                if debug {
+                    eprintln!("DEBUG: .gitignore not found, will be created if lines are added.");
+                }
             }
             Err(e) => {
-                return Err(anyhow::Error::new(e).context(format!("Failed to read {}", GITIGNORE_FILE_NAME)));
+                return Err(anyhow::Error::new(e)
+                    .context(format!("Failed to read {}", GITIGNORE_FILE_NAME)));
             }
         }
     }
-
 
     let mut overall_new_lines_count_for_session = 0;
     let mut succeeded_templates_list = String::new();
@@ -191,13 +200,20 @@ pub fn fetch_and_append_github_templates(
 
     for template_spec_original in template_specs {
         let template_spec_for_url = capitalize_template_spec(template_spec_original, debug);
-        
+
         if verbose {
-            eprintln!("\nVERBOSE: Processing template: '{}' (attempting as '{}')...", template_spec_original.cyan(), template_spec_for_url.cyan());
+            eprintln!(
+                "\nVERBOSE: Processing template: '{}' (attempting as '{}')...",
+                template_spec_original.cyan(),
+                template_spec_for_url.cyan()
+            );
         }
 
         let template_file_path_in_repo = format!("{}.gitignore", template_spec_for_url);
-        let fetch_url = format!("{}{}", GITHUB_GITIGNORE_BASE_URL, template_file_path_in_repo);
+        let fetch_url = format!(
+            "{}{}",
+            GITHUB_GITIGNORE_BASE_URL, template_file_path_in_repo
+        );
 
         if verbose {
             eprintln!("VERBOSE: Fetching from: {}", fetch_url.yellow());
@@ -214,7 +230,11 @@ pub fn fetch_and_append_github_templates(
                     succeeded_templates_list.push_str(&format!("{} ", template_spec_original));
 
                     if body.is_empty() && verbose {
-                         eprintln!("VERBOSE: Note: Template '{}' (fetched as '{}') is empty.", template_spec_original.cyan(), template_spec_for_url.cyan());
+                        eprintln!(
+                            "VERBOSE: Note: Template '{}' (fetched as '{}') is empty.",
+                            template_spec_original.cyan(),
+                            template_spec_for_url.cyan()
+                        );
                     }
 
                     let mut current_template_new_lines_added_to_session = 0;
@@ -224,74 +244,118 @@ pub fn fetch_and_append_github_templates(
                         let line = line_raw.trim_end();
 
                         if line.is_empty() {
-                            if verbose { eprintln!("VERBOSE: Skipping empty line from template."); }
+                            if verbose {
+                                eprintln!("VERBOSE: Skipping empty line from template.");
+                            }
                             continue;
                         }
 
-                        if verbose { eprintln!("VERBOSE: Checking line: '{}'", line); }
+                        if verbose {
+                            eprintln!("VERBOSE: Checking line: '{}'", line);
+                        }
 
                         if existing_lines.contains(line) {
-                            if verbose { eprintln!("VERBOSE: Line already exists: '{}'", line.italic()); }
+                            if verbose {
+                                eprintln!("VERBOSE: Line already exists: '{}'", line.italic());
+                            }
                             current_template_existed_lines += 1;
                         } else {
-                            if verbose { eprintln!("VERBOSE: New line, collecting for session: '{}'", line.green()); }
+                            if verbose {
+                                eprintln!(
+                                    "VERBOSE: New line, collecting for session: '{}'",
+                                    line.green()
+                                );
+                            }
                             session_lines_to_add.push(line.to_string());
                             existing_lines.insert(line.to_string()); // Mark as existing for subsequent templates in this run
                             current_template_new_lines_added_to_session += 1;
                         }
                     }
-                    overall_new_lines_count_for_session += current_template_new_lines_added_to_session;
+                    overall_new_lines_count_for_session +=
+                        current_template_new_lines_added_to_session;
 
                     if write_to_file_flag && current_template_new_lines_added_to_session > 0 {
-                         // Message per template if writing to file and new lines were found for *this* template
-                         println!("Collected {} new line(s) from '{}' for current session.", current_template_new_lines_added_to_session, template_spec_original.cyan());
+                        // Message per template if writing to file and new lines were found for *this* template
+                        println!(
+                            "Collected {} new line(s) from '{}' for current session.",
+                            current_template_new_lines_added_to_session,
+                            template_spec_original.cyan()
+                        );
                     }
 
-
-                    if current_template_new_lines_added_to_session == 0 && current_template_existed_lines > 0 && current_template_had_content {
-                         if verbose || write_to_file_flag { // Show this if writing or verbose
-                            println!("All patterns from '{}' (fetched as '{}') already existed or were duplicates.",
-                                template_spec_original.cyan(), template_spec_for_url.cyan());
-                         }
+                    if current_template_new_lines_added_to_session == 0
+                        && current_template_existed_lines > 0
+                        && current_template_had_content
+                    {
+                        if verbose || write_to_file_flag {
+                            // Show this if writing or verbose
+                            println!(
+                                "All patterns from '{}' (fetched as '{}') already existed or were duplicates.",
+                                template_spec_original.cyan(),
+                                template_spec_for_url.cyan()
+                            );
+                        }
                     }
-
                 } else {
-                    eprintln!("{}: Failed to fetch template '{}' (tried as '{}') - HTTP Status: {}",
-                        "Error".red().bold(), template_spec_original.cyan(), template_spec_for_url.cyan(), res.status().as_str().yellow());
+                    eprintln!(
+                        "{}: Failed to fetch template '{}' (tried as '{}') - HTTP Status: {}",
+                        "Error".red().bold(),
+                        template_spec_original.cyan(),
+                        template_spec_for_url.cyan(),
+                        res.status().as_str().yellow()
+                    );
                     failed_templates_list.push_str(&format!("{} ", template_spec_original));
                 }
             }
             Err(e) => {
-                eprintln!("{}: Failed to fetch template '{}' (tried as '{}') - Error: {}",
-                    "Error".red().bold(), template_spec_original.cyan(), template_spec_for_url.cyan(), e.to_string().yellow());
+                eprintln!(
+                    "{}: Failed to fetch template '{}' (tried as '{}') - Error: {}",
+                    "Error".red().bold(),
+                    template_spec_original.cyan(),
+                    template_spec_for_url.cyan(),
+                    e.to_string().yellow()
+                );
                 failed_templates_list.push_str(&format!("{} ", template_spec_original));
             }
         }
-    } 
+    }
 
     if write_to_file_flag {
-        if !session_lines_to_add.is_empty() { // Check if there are any lines collected from *any* template
+        if !session_lines_to_add.is_empty() {
+            // Check if there are any lines collected from *any* template
             let mut file = OpenOptions::new().append(true).open(gitignore_path)?;
-            
+
             // Check if .gitignore needs a newline before appending
             let current_content_for_newline_check = read_to_string(gitignore_path)?;
-            if !current_content_for_newline_check.is_empty() && !current_content_for_newline_check.ends_with('\n') {
-                if verbose { eprintln!("VERBOSE: Adding newline to end of {} before appending.", GITIGNORE_FILE_NAME.cyan()); }
+            if !current_content_for_newline_check.is_empty()
+                && !current_content_for_newline_check.ends_with('\n')
+            {
+                if verbose {
+                    eprintln!(
+                        "VERBOSE: Adding newline to end of {} before appending.",
+                        GITIGNORE_FILE_NAME.cyan()
+                    );
+                }
                 writeln!(file)?;
             }
-            
+
             for line in &session_lines_to_add {
                 writeln!(file, "{}", line)?;
             }
 
-            println!("Total {} new line(s) appended to {}.", 
-                overall_new_lines_count_for_session, 
-                GITIGNORE_FILE_NAME.cyan());
-
-        } else if !succeeded_templates_list.trim().is_empty() { 
-             println!("No new lines were added to {} from the processed templates.", GITIGNORE_FILE_NAME.cyan());
+            println!(
+                "Total {} new line(s) appended to {}.",
+                overall_new_lines_count_for_session,
+                GITIGNORE_FILE_NAME.cyan()
+            );
+        } else if !succeeded_templates_list.trim().is_empty() {
+            println!(
+                "No new lines were added to {} from the processed templates.",
+                GITIGNORE_FILE_NAME.cyan()
+            );
         }
-    } else { // Write to stdout
+    } else {
+        // Write to stdout
         if !session_lines_to_add.is_empty() {
             for line in &session_lines_to_add {
                 println!("{}", line);
@@ -301,12 +365,21 @@ pub fn fetch_and_append_github_templates(
         }
     }
 
-    if verbose { eprint!("\nVERBOSE: "); } 
+    if verbose {
+        eprint!("\nVERBOSE: ");
+    }
     if !succeeded_templates_list.trim().is_empty() {
-        println!("Successfully processed template(s): {}", succeeded_templates_list.trim().green());
+        println!(
+            "Successfully processed template(s): {}",
+            succeeded_templates_list.trim().green()
+        );
     }
     if !failed_templates_list.trim().is_empty() {
-        eprintln!("{}: {}", "Failed to fetch or process template(s)".red(), failed_templates_list.trim().yellow());
+        eprintln!(
+            "{}: {}",
+            "Failed to fetch or process template(s)".red(),
+            failed_templates_list.trim().yellow()
+        );
     }
 
     if debug {
