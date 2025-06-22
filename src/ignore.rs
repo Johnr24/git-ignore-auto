@@ -220,13 +220,13 @@ pub fn fetch_and_append_github_templates(
         }
 
         let response = attohttpc::get(&fetch_url).send();
-        let mut current_template_had_content = false;
+        // let mut current_template_had_content = false; // This variable was unused
 
         match response {
             Ok(res) => {
                 if res.is_success() {
                     let body = res.text()?;
-                    current_template_had_content = !body.is_empty();
+                    // current_template_had_content = !body.is_empty(); // Assignment removed
                     succeeded_templates_list.push_str(&format!("{} ", template_spec_original));
 
                     if body.is_empty() && verbose {
@@ -285,12 +285,16 @@ pub fn fetch_and_append_github_templates(
 
                     if current_template_new_lines_added_to_session == 0
                         && current_template_existed_lines > 0
-                        && current_template_had_content
+                        // && current_template_had_content // Condition removed as variable is removed
                     {
+                        // If the template had content (checked by body.is_empty() earlier)
+                        // and no new lines were added, but some existed, this message is appropriate.
+                        // The check for `body.is_empty()` at the beginning of the success block
+                        // already handles the case for truly empty templates.
                         if verbose || write_to_file_flag {
                             // Show this if writing or verbose
                             println!(
-                                "All patterns from '{}' (fetched as '{}') already existed or were duplicates.",
+                                "All patterns from '{}' (fetched as '{}') already existed or were duplicates (template was not empty).",
                                 template_spec_original.cyan(),
                                 template_spec_for_url.cyan()
                             );

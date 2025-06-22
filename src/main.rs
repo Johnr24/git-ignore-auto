@@ -91,7 +91,7 @@ fn main() -> Result<()> {
     }
 
     let app = Core::new();
-    let mut user_data = UserData::new()?;
+    let user_data = UserData::new()?; // Removed mut, as it's not mutated in this path
     let ignore_data = IgnoreData::new(&user_data)?;
 
     if opt.update {
