@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    // collections::HashMap, // No longer directly used here
     fmt::{Display, Write, write},
     fs::{read_to_string, read_dir},
     hash::{Hash, Hasher},

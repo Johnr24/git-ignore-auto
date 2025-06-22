@@ -4,19 +4,21 @@ use std::{
     fs::{DirEntry, File, OpenOptions, read_dir, read_to_string},
     io::{self, Write as IoWrite}, // Renamed to avoid conflict
     path::Path,
+    process::Command, // Added for running git commands
     sync::LazyLock,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result}; // Added Context
 use colored::Colorize;
 use etcetera::{AppStrategyArgs, choose_app_strategy};
 
 use crate::{
-    data::{CACHE_DIR, CACHE_FILE},
+    data::{CACHE_DIR, GIT_REPO_CACHE_DIR}, // Use GIT_REPO_CACHE_DIR, remove CACHE_FILE
     detector::Detectors,
 };
 
 const GITHUB_GITIGNORE_BASE_URL: &str = "https://raw.githubusercontent.com/github/gitignore/main/";
+const GITHUB_GITIGNORE_REPO_URL: &str = "https://github.com/github/gitignore.git";
 const GITIGNORE_FILE_NAME: &str = ".gitignore";
 
 #[cfg(target_os = "windows")]
@@ -41,61 +43,119 @@ pub static PROJECT_DIRS: LazyLock<etcetera::app_strategy::Xdg> = LazyLock::new(|
 
 #[derive(Debug)]
 pub struct Core {
-    server: String,
+    // server field removed
     detectors: Detectors,
 }
 
 impl Core {
-    /// Creates a new instance of the `git-ignore` program. Thanks to
-    /// `directories` we support crossplatform caching of our results, the cache
-    /// directories works on macOS, Linux and Windows. See the documentation for
-    /// their locations.
+    /// Creates a new instance of the `git-ignore` program.
+    /// Caching uses a local clone of the github/gitignore repository.
     pub fn new() -> Self {
         Core {
-            server: "https://www.gitignore.io/api/list?format=json".into(),
+            // server initialization removed
             detectors: Detectors::default(),
         }
     }
 
-    /// Both updates and initializes `git-ignore`. Creates the cache directory
-    /// if it doesn't exist and then downloads the templates from
-    /// [gitignore.io](https://www.gitignore.io), saving them in the cache
-    /// directory.
+    /// Updates the local cache of the github/gitignore repository.
+    /// Clones the repository if it doesn't exist, or pulls the latest changes if it does.
+    /// Requires `git` to be installed and in PATH.
     pub fn update(&self) -> Result<()> {
-        create_cache()?;
-        self.fetch_gitignore()?;
+        // Ensure the base cache directory exists. GIT_REPO_CACHE_DIR will be created by git clone.
+        if !CACHE_DIR.exists() {
+            std::fs::create_dir_all(CACHE_DIR.as_path())
+                .with_context(|| format!("Failed to create cache directory at {:?}", CACHE_DIR.as_path()))?;
+            eprintln!("{}: Created cache directory at {}", "Info".bold().green(), CACHE_DIR.display());
+        }
 
-        eprintln!("{}: Update successful", "Info".bold().green());
+        if GIT_REPO_CACHE_DIR.exists() {
+            eprintln!(
+                "{}: Attempting to update existing local gitignore repository cache at {}...",
+                "Info".bold().green(),
+                GIT_REPO_CACHE_DIR.display()
+            );
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(GIT_REPO_CACHE_DIR.as_path())
+                .arg("pull")
+                .output()
+                .with_context(|| format!("Failed to execute 'git pull' in {:?}", GIT_REPO_CACHE_DIR.as_path()))?;
+
+            if output.status.success() {
+                eprintln!(
+                    "{}: Successfully updated local gitignore repository.",
+                    "Info".bold().green()
+                );
+                if !output.stdout.is_empty() {
+                    eprintln!("Git pull output:\n{}", String::from_utf8_lossy(&output.stdout));
+                }
+            } else {
+                eprintln!(
+                    "{}: Failed to update local gitignore repository. 'git pull' exited with status: {}",
+                    "Error".bold().red(),
+                    output.status
+                );
+                if !output.stderr.is_empty() {
+                    eprintln!("Git pull error:\n{}", String::from_utf8_lossy(&output.stderr));
+                }
+                // Optionally, could suggest deleting the cache dir and retrying.
+            }
+        } else {
+            eprintln!(
+                "{}: Local gitignore repository cache not found. Cloning from {} to {}...",
+                "Info".bold().green(),
+                GITHUB_GITIGNORE_REPO_URL,
+                GIT_REPO_CACHE_DIR.display()
+            );
+            let output = Command::new("git")
+                .arg("clone")
+                .arg(GITHUB_GITIGNORE_REPO_URL)
+                .arg(GIT_REPO_CACHE_DIR.as_path())
+                .output()
+                .with_context(|| format!("Failed to execute 'git clone {}'", GITHUB_GITIGNORE_REPO_URL))?;
+
+            if output.status.success() {
+                eprintln!(
+                    "{}: Successfully cloned gitignore repository.",
+                    "Info".bold().green()
+                );
+            } else {
+                eprintln!(
+                    "{}: Failed to clone gitignore repository. 'git clone' exited with status: {}",
+                    "Error".bold().red(),
+                    output.status
+                );
+                if !output.stderr.is_empty() {
+                    eprintln!("Git clone error:\n{}", String::from_utf8_lossy(&output.stderr));
+                }
+                // Optionally, could suggest checking git installation or network.
+            }
+        }
         Ok(())
     }
 
-    /// Creates a formatted string of all the configured templates
+    /// Autodetects templates based on files in the current directory.
+    /// This uses the locally cached github/gitignore repository.
     pub fn autodetect_templates(&self) -> Result<Vec<String>> {
         let entries: Vec<DirEntry> = read_dir(current_dir()?)?.map(Result::unwrap).collect();
         Ok(self.detectors.detects(entries.as_slice()))
     }
 
-    /// Fetches all the templates from [gitignore.io](http://gitignore.io/),
-    /// and writes the contents to the cache for easy future retrieval.
-    fn fetch_gitignore(&self) -> Result<()> {
-        let res = attohttpc::get(&self.server).send()?;
-
-        let mut file = File::create(CACHE_FILE.as_path())?;
-        file.write_all(&res.bytes()?)?;
-
-        Ok(())
-    }
+    // fetch_gitignore method removed as it's no longer used.
 }
 
 pub fn cache_exists() -> bool {
-    CACHE_DIR.exists() || CACHE_FILE.exists()
+    // Now checks for the existence of the git repository cache directory
+    GIT_REPO_CACHE_DIR.exists() && GIT_REPO_CACHE_DIR.is_dir()
 }
 
 fn create_cache() -> std::io::Result<()> {
-    if !cache_exists() {
+    // This function now only ensures the top-level cache directory exists.
+    // The specific git repo cache directory (GIT_REPO_CACHE_DIR)
+    // will be created by `git clone` if it doesn't exist.
+    if !CACHE_DIR.exists() {
         std::fs::create_dir_all(CACHE_DIR.as_path())?;
     }
-
     Ok(())
 }
 

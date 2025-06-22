@@ -96,38 +96,38 @@ fn main() -> Result<()> {
 
     if opt.update {
         if opt.verbose {
-            eprintln!("VERBOSE: Updating gitignore.io cache...");
+            eprintln!("VERBOSE: Updating local github/gitignore repository cache...");
         }
-        app.update()?; // This prints "Info: Update successful"
+        app.update()?; // This will now print its own success/failure messages.
         if opt.templates.is_empty() && !opt.auto && !opt.list {
             if opt.debug {
-                eprintln!("DEBUG: Update complete, no further templates to process. Exiting.");
+                eprintln!("DEBUG: Local repository cache update process finished, no further templates to process. Exiting.");
             }
             return Ok(());
         }
     } else if cache_exists() {
         if opt.verbose || (!opt.list && !opt.templates.is_empty()) {
             eprintln!(
-                "{}: You are using cached results from gitignore.io, pass '-u' to update the cache\n",
+                "{}: You are using the local github/gitignore repository cache, pass '-u' to update it.\n",
                 "Info".bold().green(),
             );
         }
-    } else if !opt.list {
+    } else if !opt.list { // If not listing and cache doesn't exist, try to update (clone) it.
         eprintln!(
-            "{}: Cache directory or gitignore.io ignore file not found, attempting update.",
+            "{}: Local github/gitignore repository cache not found, attempting to clone/update.",
             "Warning".bold().red(),
         );
-        app.update()?;
+        app.update()?; // This will attempt to clone.
     }
 
     let mut all_templates_for_cache: HashSet<String> = opt.templates.into_iter().collect();
     if opt.auto {
         if opt.verbose {
-            eprintln!("VERBOSE: Autodetecting templates for gitignore.io cache...");
+            eprintln!("VERBOSE: Autodetecting templates using local github/gitignore repository cache...");
         }
         for template in app.autodetect_templates()? {
             if opt.verbose {
-                eprintln!("VERBOSE: Autodetected (for cache): {}", template.cyan());
+                eprintln!("VERBOSE: Autodetected (from local cache): {}", template.cyan());
             }
             all_templates_for_cache.insert(template);
         }
@@ -147,7 +147,7 @@ fn main() -> Result<()> {
     let output_str = if opt.list {
         if opt.verbose {
             eprintln!(
-                "VERBOSE: Listing templates from gitignore.io cache for: {:?}",
+                "VERBOSE: Listing templates from local github/gitignore repository cache for: {:?}",
                 templates_for_cache
             );
         }
@@ -155,7 +155,7 @@ fn main() -> Result<()> {
     } else if templates_for_cache.is_empty() {
         if opt.debug {
             eprintln!(
-                "DEBUG: No templates specified for gitignore.io cache processing, rendering help."
+                "DEBUG: No templates specified for local cache processing, rendering help."
             );
         }
         let mut app_cmd = Cli::command();
@@ -163,7 +163,7 @@ fn main() -> Result<()> {
     } else {
         if opt.verbose {
             eprintln!(
-                "VERBOSE: Getting templates from gitignore.io cache for: {:?}",
+                "VERBOSE: Getting templates from local github/gitignore repository cache for: {:?}",
                 templates_for_cache
             );
         }
@@ -177,7 +177,7 @@ fn main() -> Result<()> {
         }
     } else if output_str.is_empty() && !templates_for_cache.is_empty() {
         eprintln!(
-            "{}: No templates found in gitignore.io cache for: {}",
+            "{}: No templates found in local github/gitignore repository cache for: {}",
             "Warning".yellow(),
             templates_for_cache.join(", ")
         );
@@ -186,48 +186,48 @@ fn main() -> Result<()> {
 
     if opt.write {
         if opt.debug {
-            eprintln!("DEBUG: Write flag is set for gitignore.io cache output.");
+            eprintln!("DEBUG: Write flag is set for local cache output.");
         }
         let file_path = std::env::current_dir()?.join(".gitignore");
         if !file_path.exists() {
             if opt.verbose {
                 eprintln!(
-                    "VERBOSE: no '.gitignore' file found, creating with content from gitignore.io...",
+                    "VERBOSE: no '.gitignore' file found, creating with content from local cache...",
                 );
             }
             let mut file = File::create(&file_path)?;
             file.write_all(output_str.as_bytes())?;
             println!(
-                "Created {} with content from gitignore.io for: {}",
+                "Created {} with content from local cache for: {}",
                 ".gitignore".cyan(),
                 templates_for_cache.join(", ").green()
             );
         } else if opt.force {
             if opt.verbose {
                 eprintln!(
-                    "VERBOSE: appending results from gitignore.io to '.gitignore' (force active)...",
+                    "VERBOSE: appending results from local cache to '.gitignore' (force active)...",
                 );
             }
             let mut file = OpenOptions::new().append(true).open(&file_path)?;
-            let current_content = std::fs::read_to_string(&file_path)?; // Use std::fs for simplicity here
+            let current_content = std::fs::read_to_string(&file_path)?;
             if !current_content.is_empty() && !current_content.ends_with('\n') {
                 writeln!(file)?;
             }
             file.write_all(output_str.as_bytes())?;
             println!(
-                "Appended content from gitignore.io to {} for: {}",
+                "Appended content from local cache to {} for: {}",
                 ".gitignore".cyan(),
                 templates_for_cache.join(", ").green()
             );
         } else {
             eprintln!(
-                "{}: '.gitignore' already exists. Use '-f' to append results from gitignore.io, or handle manually.",
+                "{}: '.gitignore' already exists. Use '-f' to append results from local cache, or handle manually.",
                 "Warning".bold().red()
             );
         }
     } else {
         if opt.debug {
-            eprintln!("DEBUG: Writing gitignore.io cache output to stdout.");
+            eprintln!("DEBUG: Writing local cache output to stdout.");
         }
         let stdout_handle = io::stdout();
         let mut locked_stdout = stdout_handle.lock();
