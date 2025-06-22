@@ -27,7 +27,7 @@ pub struct Cli {
     #[arg(short, long, requires = "write")]
     pub force: bool,
     /// Verbose output.
-    #[arg(short = 'V', long)]
+    #[arg(short = 'v', long)]
     pub verbose: bool,
     /// Debug output.
     #[arg(long)]
